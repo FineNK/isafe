@@ -184,3 +184,44 @@
     )
   )
 )
+
+;; Get pool information
+(define-read-only (get-insurance-pool-info (pool-id uint))
+  (begin
+    (asserts! (> pool-id u0) err-invalid-pool-id)
+    (asserts! (<= pool-id (var-get total-pool-count)) err-pool-not-found)
+    (ok (unwrap! (map-get? insurance-pools { pool-id: pool-id }) err-pool-not-found))
+  )
+)
+
+;; Get claim information
+(define-read-only (get-insurance-claim-info (claim-id uint))
+  (begin
+    (asserts! (> claim-id u0) err-invalid-pool-id)
+    (asserts! (<= claim-id (var-get total-pool-count)) err-claim-not-found)
+    (ok (unwrap! (map-get? insurance-claims { claim-id: claim-id }) err-claim-not-found))
+  )
+)
+
+;; Change pool administrator
+(define-public (change-pool-administrator (pool-id uint) (new-admin principal))
+  (begin
+    (asserts! (var-get protocol-initialized) err-not-initialized)
+    (asserts! (> pool-id u0) err-invalid-pool-id)
+    (asserts! (<= pool-id (var-get total-pool-count)) err-pool-not-found)
+
+    ;; Validate new-admin principal
+    (asserts! (not (is-eq new-admin tx-sender)) err-invalid-admin)
+
+    (let (
+      (pool (unwrap! (map-get? insurance-pools { pool-id: pool-id }) err-pool-not-found))
+    )
+      (asserts! (is-eq tx-sender (get admin pool)) err-not-admin)
+      (map-set insurance-pools
+        { pool-id: pool-id }
+        (merge pool { admin: new-admin })
+      )
+      (ok true)
+    )
+  )
+)
