@@ -126,3 +126,61 @@
     )
   )
 )
+
+;; File a claim
+(define-public (submit-insurance-claim (pool-id uint) (amount uint))
+  (begin
+    (asserts! (var-get protocol-initialized) err-not-initialized)
+    (asserts! (> pool-id u0) err-invalid-pool-id)
+    (asserts! (<= pool-id (var-get total-pool-count)) err-pool-not-found)
+    (asserts! (> amount u0) err-invalid-claim-amount)
+    
+    (let (
+      (pool (unwrap! (map-get? insurance-pools { pool-id: pool-id }) err-pool-not-found))
+      (claim-id (+ (var-get total-pool-count) u1))
+    )
+      (asserts! (is-some (index-of (get members pool) tx-sender)) err-not-member)
+      (asserts! (<= amount (get coverage pool)) err-insufficient-funds)
+      (map-set insurance-claims
+        { claim-id: claim-id }
+        {
+          pool-id: pool-id,
+          claimant: tx-sender,
+          amount: amount,
+          status: "pending"
+        }
+      )
+      (var-set total-pool-count claim-id)
+      (ok claim-id)
+    )
+  )
+)
+
+;; Process a claim (now admin only)
+(define-public (process-insurance-claim (claim-id uint) (approve bool))
+  (begin
+    (asserts! (var-get protocol-initialized) err-not-initialized)
+    (asserts! (> claim-id u0) err-invalid-pool-id)
+    (asserts! (<= claim-id (var-get total-pool-count)) err-claim-not-found)
+    
+    (let (
+      (claim (unwrap! (map-get? insurance-claims { claim-id: claim-id }) err-claim-not-found))
+      (pool (unwrap! (map-get? insurance-pools { pool-id: (get pool-id claim) }) err-pool-not-found))
+    )
+      (asserts! (is-eq tx-sender (get admin pool)) err-not-admin)
+      (if approve
+        (begin
+          (asserts! (>= (get balance pool) (get amount claim)) err-insufficient-funds)
+          (map-set insurance-pools
+            { pool-id: (get pool-id claim) }
+            (merge pool { balance: (- (get balance pool) (get amount claim)) })
+          )
+          (unwrap! (as-contract (stx-transfer? (get amount claim) tx-sender (get claimant claim))) err-insufficient-funds)
+          (map-set insurance-claims { claim-id: claim-id } (merge claim { status: "approved" }))
+        )
+        (map-set insurance-claims { claim-id: claim-id } (merge claim { status: "rejected" }))
+      )
+      (ok true)
+    )
+  )
+)
